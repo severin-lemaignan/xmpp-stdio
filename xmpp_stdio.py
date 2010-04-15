@@ -1,0 +1,178 @@
+#!/usr/bin/python
+# Based on examples from http://xmpppy.sourceforge.net/
+import sys,os,xmpp,time,select, getopt
+
+class xmpp_stdio:
+
+	def __init__(self,jidparams,remotejid, message_handler = None):
+		self.password = jidparams['password']
+		self.jid=xmpp.protocol.JID(jidparams['jid'])
+		self.client=xmpp.Client(self.jid.getDomain(),debug=[])
+		self.remotejid = remotejid
+		
+		self.xmppMsgQueue = []
+		
+		if not message_handler:
+			self.message_handler = self.default_message_handler
+		else:
+			self.message_handler = message_handler
+		
+		if not self.xmpp_connect():
+			sys.stderr.write("Could not connect to server, or password mismatch!\n")
+			sys.exit(1)
+
+	def register_handlers(self):
+		self.client.RegisterHandler('message',self.message_handler)
+
+	def default_message_handler(self, con, event):
+		type = event.getType()
+		fromjid = event.getFrom().getStripped()
+		if type in ['message', 'chat', None] and fromjid == self.remotejid:
+			self.xmppMsgQueue.append(event.getBody())
+
+	def send_message(self, message):
+		m = xmpp.protocol.Message(to=self.remotejid,body=message,typ='chat')
+		self.client.send(m)
+	
+	def set_status(self, s, msg = None):
+		print "Setting status to '" + s + "'"
+		pres = xmpp.protocol.Presence(priority=5, show=s,status=msg)
+		self.client.send(pres)
+	
+	def xmpp_connect(self):
+		con=self.client.connect()
+		if not con:
+			sys.stderr.write('could not connect!\n')
+			return False
+		sys.stderr.write('connected with %s\n'%con)
+		auth=self.client.auth(self.jid.getNode(),self.password,resource=self.jid.getResource())
+		if not auth:
+			sys.stderr.write('could not authenticate!\n')
+			return False
+		sys.stderr.write('authenticated using %s\n'%auth)
+		self.register_handlers()
+		
+		self.client.sendInitPresence()
+		return con
+
+	def process(self):
+		self.client.Process(1)
+
+	def get_socket(self):
+		return self.client.Connection._sock
+		
+	def pop_msg_queue(self):
+		try:
+			return self.xmppMsgQueue.pop()
+		except IndexError: #messages queue empty
+			return None
+
+def usage():
+	print """Usage:
+xmpp_stdio.py [OPTIONS]
+  -d, --distant=ACCOUNT			Distant XMPP account to connect to (mandatory)
+  -l, --local=ACCOUNT			Robot XMPP account (mandatory)
+  -p, --pwd=PASSWORD			Robot XMPP account password (mandatory)
+  
+Example:
+  echo "Hello" | xmpp_stdio.py -d toto@jabber.org -l tata@gmail.com -p supertata
+  
+Simple Python XMPP client. It reads stdin and sends it to the given distant XMPP
+client, and writes on stdout what the client answers.
+"""
+
+# TO ADD TO USAGE WHEN IMPLEMENTED:
+# "  -s, --socket-server=FILE		Starts xmpp_client as a UNIX socket server on FILE"
+# "It can optionally be started with a file used as UNIX domain socket server."
+
+
+if __name__ == '__main__':
+
+	jidparams={}
+	tojid = ""
+	startUnixSocketServer = False
+	pipeName = ""
+	
+	try:
+		optlist, args = getopt.getopt(sys.argv[1:], 'd:l:p:s:', ['distant=', 'local=', 'pwd=', 'socket-server='])
+	except getopt.GetoptError, err:
+		# print help information and exit:
+		print str(err) # will print something like "option -a not recognized"
+		usage()
+		sys.exit(2)
+
+	for o, a in optlist:
+		if o in ("-d", "--distant"):
+			tojid = a
+		elif o in ("-l", "--local"):
+			jidparams["jid"] = a
+		elif o in ("-p", "--pwd"):
+			jidparams["password"] = a
+		elif o in ("-s", "--socket-server"):
+			startUnixSocketServer = True
+			pipeName = a
+		else:
+			print "Unhandled option " + o
+			usage()
+			sys.exit(2)
+
+	if tojid == "" or len(jidparams) == 0:
+		print "Missing parameter"
+		usage()
+		sys.exit(2)
+
+	bot=xmpp_stdio(jidparams,tojid)
+	
+	socketlist = {bot.get_socket():'xmpp',sys.stdin:'stdio'}
+	
+	if startUnixSocketServer:
+		unix_socket_raw = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+		try:
+			os.remove(pipeName)
+		except OSError:
+			pass
+		unix_socket_raw.bind(pipeName)
+		unix_socket_raw.listen(1)
+		unix_socket, addr = unix_socket_raw.accept()
+		socketlist[unix_socket] = 'unix_socket'
+		
+	online = 1
+
+	try:
+		while online:
+			
+			#sys.stderr.write("Tick\n")
+			(i , o, e) = select.select(socketlist.keys(),[],[])
+			for each in i:
+				if socketlist[each] == 'xmpp':
+					bot.process()
+					
+				elif socketlist[each] == 'stdio':
+					#sys.stderr.write("Reading stdin\n")
+					msg = sys.stdin.readline().rstrip('\r\n')
+					#sys.stderr.write("Sending " + msg +"\n")
+					bot.send_message(msg)
+					
+				elif socketlist[each] == 'unix_socket':
+					msg = unix_socket.recv(4096)
+					if not msg: break
+					bot.send_message(msg)
+					
+				else:
+					raise Exception("Unknown socket type: %s" % repr(socketlist[each]))
+					
+			msg = bot.pop_msg_queue()
+			if msg != None:
+				sys.stdout.write(msg + "\n")
+				sys.stdout.flush()
+				#for each in o:
+				#	if socketlist[each] == 'stdio':
+				#		sys.stdout.write(msg + "\n")
+				#		sys.stdout.flush()
+				#
+				#	elif socketlist[each] == 'unix_socket':
+				#		unix_socket.send(msg + "\n")
+						
+	except KeyboardInterrupt:
+		print "Leaving now."
+		sys.exit()
