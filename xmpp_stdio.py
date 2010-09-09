@@ -4,7 +4,7 @@ import sys,os,xmpp,time,select, getopt
 
 class xmpp_stdio:
 
-	def __init__(self,jidparams,remotejid, message_handler = None):
+	def __init__(self,jidparams,remotejid, message_handler = None, proxy=None):
 		self.password = jidparams['password']
 		self.jid=xmpp.protocol.JID(jidparams['jid'])
 		self.client=xmpp.Client(self.jid.getDomain(),debug=[])
@@ -17,7 +17,7 @@ class xmpp_stdio:
 		else:
 			self.message_handler = message_handler
 		
-		if not self.xmpp_connect():
+		if not self.xmpp_connect(proxy):
 			sys.stderr.write("Could not connect to server, or password mismatch!\n")
 			sys.exit(1)
 
@@ -39,8 +39,8 @@ class xmpp_stdio:
 		pres = xmpp.protocol.Presence(priority=5, show=s,status=msg)
 		self.client.send(pres)
 	
-	def xmpp_connect(self):
-		con=self.client.connect()
+	def xmpp_connect(self, _proxy = None):
+		con=self.client.connect(proxy=_proxy)
 		if not con:
 			sys.stderr.write('could not connect!\n')
 			return False
@@ -73,6 +73,7 @@ xmpp_stdio.py [OPTIONS]
   -d, --distant=ACCOUNT			Distant XMPP account to connect to (mandatory)
   -l, --local=ACCOUNT			Robot XMPP account (mandatory)
   -p, --pwd=PASSWORD			Robot XMPP account password (mandatory)
+  --proxy						Uses the LAAS HTTP proxy (webcache.laas.fr)
   
 Example:
   echo "Hello" | xmpp_stdio.py -d toto@jabber.org -l tata@gmail.com -p supertata
@@ -93,8 +94,10 @@ if __name__ == '__main__':
 	startUnixSocketServer = False
 	pipeName = ""
 	
+	proxy=None
+	
 	try:
-		optlist, args = getopt.getopt(sys.argv[1:], 'd:l:p:s:', ['distant=', 'local=', 'pwd=', 'socket-server='])
+		optlist, args = getopt.getopt(sys.argv[1:], 'd:l:p:s:', ['distant=', 'local=', 'pwd=', 'socket-server=', 'proxy'])
 	except getopt.GetoptError, err:
 		# print help information and exit:
 		print str(err) # will print something like "option -a not recognized"
@@ -111,6 +114,9 @@ if __name__ == '__main__':
 		elif o in ("-s", "--socket-server"):
 			startUnixSocketServer = True
 			pipeName = a
+		elif o == "--proxy":
+			print "Using webcache.laas.fr proxy."
+			proxy={'host':'webcache.laas.fr','port':'3138'}
 		else:
 			print "Unhandled option " + o
 			usage()
@@ -121,7 +127,7 @@ if __name__ == '__main__':
 		usage()
 		sys.exit(2)
 
-	bot=xmpp_stdio(jidparams,tojid)
+	bot=xmpp_stdio(jidparams,tojid, proxy = proxy)
 	
 	socketlist = {bot.get_socket():'xmpp',sys.stdin:'stdio'}
 	
