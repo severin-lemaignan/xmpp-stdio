@@ -8,5 +8,5 @@ setup(name='xmpp_stdio',
       author='Séverin Lemaignan',
       author_email='severin.lemaignan@laas.fr',
       url='http://softs.laas.fr/openrobots',
-      py_modules=['xmpp_stdio'],
+      scripts=['xmpp_stdio', 'festival_passer'],
       )
