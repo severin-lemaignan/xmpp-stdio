@@ -71,12 +71,12 @@ def usage():
 	print """Usage:
 xmpp_stdio.py [OPTIONS]
   -d, --distant=ACCOUNT			Distant XMPP account to connect to 
-                                (mandatory, except if option -i is set)
+					(mandatory, except if option -o is set)
   -l, --local=ACCOUNT			Robot XMPP account (mandatory)
   -p, --pwd=PASSWORD			Robot XMPP account password (mandatory)
-  --proxy						Uses the LAAS HTTP proxy (webcache.laas.fr)
-  -i, --input					Only read stdin and send it to the distant user
-  -o, --output					Only write on stdout what the distant user writes
+  --proxy				Uses the LAAS HTTP proxy (webcache.laas.fr)
+  -i, --input				Only read stdin and send it to the distant user
+  -o, --output				Only write on stdout what the distant user writes
   
 Example:
   echo "Hello" | xmpp_stdio.py -d toto@jabber.org -l tata@gmail.com -p supertata
@@ -131,7 +131,7 @@ if __name__ == '__main__':
 			usage()
 			sys.exit(2)
 
-	if tojid == "" or len(jidparams) == 0:
+	if (tojid == "" and outputOnly == False) or len(jidparams) == 0:
 		print "Missing parameter"
 		usage()
 		sys.exit(2)
